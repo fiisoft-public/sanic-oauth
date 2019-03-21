@@ -1,10 +1,11 @@
 import importlib
 import logging
-from functools import partial
 import re
 import typing
-
+from functools import partial
 from inspect import isawaitable
+
+import aiohttp
 from aiohttp.web_exceptions import HTTPBadRequest
 from sanic import Blueprint, Sanic
 from sanic.request import Request
@@ -153,16 +154,6 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
     return wrapped
 
 
-@oauth_blueprint.listener('after_server_start')
-async def configuration_check(sanic_app: Sanic, _loop) -> None:
-    if not hasattr(sanic_app, 'async_session'):
-        raise OAuthConfigurationException("You should configure async_session with aiohttp.ClientSession")
-
-    extensions = getattr(sanic_app, 'extensions', None) or dict()
-    if not any(isinstance(e, Session) for e in extensions.values()):
-        raise OAuthConfigurationException("You should configure Session from [sanic-session](https://sanic-session.readthedocs.io/en/latest/using_the_interfaces.html)")
-
-
 def setup_providers(  # pylint: disable=too-many-locals
         providers_conf: typing.Dict, oauth_redirect_uri: str,
         oauth_scope: str, oauth_endpoint_path: str) -> typing.Dict:
@@ -289,3 +280,23 @@ async def create_oauth_factory(sanic_app: Sanic, _loop) -> None:
         sanic_app.config.OAUTH_EMAIL_REGEX = None
 
     sanic_app.add_route(oauth, oauth_endpoint_path)
+
+
+@oauth_blueprint.listener('after_server_start')
+async def configuration_check(sanic_app: Sanic, _loop) -> None:
+    if not hasattr(sanic_app, 'async_session'):
+        raise OAuthConfigurationException("You should configure async_session with aiohttp.ClientSession")
+
+    extensions = getattr(sanic_app, 'extensions', None) or dict()
+    if not any(isinstance(e, Session) for e in extensions.values()):
+        raise OAuthConfigurationException("You should configure Session from [sanic-session](https://sanic-session.readthedocs.io/en/latest/using_the_interfaces.html)")
+
+
+@oauth_blueprint.listener('before_server_start')
+async def init_aiohttp_session(sanic_app: Sanic, _loop) -> None:
+    sanic_app.async_session = aiohttp.ClientSession()
+
+
+@oauth_blueprint.listener('after_server_stop')
+async def close_aiohttp_session(sanic_app: Sanic, _loop) -> None:
+    await sanic_app.async_session.close()
