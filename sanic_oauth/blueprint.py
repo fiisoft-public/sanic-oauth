@@ -4,6 +4,7 @@ from functools import partial
 import re
 import typing
 
+from inspect import isawaitable
 from aiohttp.web_exceptions import HTTPBadRequest
 from sanic import Blueprint, Sanic
 from sanic.request import Request
@@ -137,14 +138,17 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
 
         # Shortcircuit out if we don't care about user info
         if not add_user_info:
-            return await async_handler(request, **kwargs)
+            response = async_handler(request, **kwargs)
+        else:
+            # Otherwise retrieve the user info once per session
+            user = await fetch_user_info(
+                request, provider, oauth_endpoint_path,
+                email_regex or oauth_email_regex
+            )
+            response = async_handler(request, user, **kwargs)
 
-        # Otherwise retrieve the user info once per session
-        user = await fetch_user_info(
-            request, provider, oauth_endpoint_path,
-            email_regex or oauth_email_regex
-        )
-        return await async_handler(request, user, **kwargs)
+        return await response if isawaitable(response) else response
+
 
     return wrapped
 
@@ -153,8 +157,8 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
 async def configuration_check(sanic_app: Sanic, _loop) -> None:
     if not hasattr(sanic_app, 'async_session'):
         raise OAuthConfigurationException("You should configure async_session with aiohttp.ClientSession")
-    if not hasattr(sanic_app, 'session_interface'):
-        raise OAuthConfigurationException("You should configure session_interface from sanic-session")
+    # if not hasattr(sanic_app, 'session_interface'):
+    #     raise OAuthConfigurationException("You should configure session_interface from sanic-session")
 
 
 def setup_providers(  # pylint: disable=too-many-locals
