@@ -38,6 +38,7 @@ setup(
     ],
     install_requires=[
         "yarl~=1.2.6",
-        "aiohttp~=3.3.2"
+        "aiohttp~=3.3.2",
+        "sanic-session~=0.5.0"
     ],
 )

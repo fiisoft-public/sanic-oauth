@@ -9,6 +9,7 @@ from aiohttp.web_exceptions import HTTPBadRequest
 from sanic import Blueprint, Sanic
 from sanic.request import Request
 from sanic.response import HTTPResponse, redirect
+from sanic_session import Session
 from .core import UserInfo
 
 __author__ = "Bogdan Gladyshev"
@@ -149,7 +150,6 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
 
         return await response if isawaitable(response) else response
 
-
     return wrapped
 
 
@@ -157,8 +157,10 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
 async def configuration_check(sanic_app: Sanic, _loop) -> None:
     if not hasattr(sanic_app, 'async_session'):
         raise OAuthConfigurationException("You should configure async_session with aiohttp.ClientSession")
-    # if not hasattr(sanic_app, 'session_interface'):
-    #     raise OAuthConfigurationException("You should configure session_interface from sanic-session")
+
+    extensions = getattr(sanic_app, 'extensions', None) or dict()
+    if not any(isinstance(e, Session) for e in extensions.values()):
+        raise OAuthConfigurationException("You should configure Session from [sanic-session](https://sanic-session.readthedocs.io/en/latest/using_the_interfaces.html)")
 
 
 def setup_providers(  # pylint: disable=too-many-locals
