@@ -12,6 +12,13 @@ from sanic.request import Request
 from sanic.response import HTTPResponse, redirect
 from sanic_session import Session
 from .core import UserInfo
+from .config import (
+    SES_ACCESS_TOKEN_FIELD,
+    SES_USER_INFO_FIELD,
+    SES_OAUTH_PROVIDER_FIELD,
+    SES_AFTER_AUTH_REDIR_FIELD,
+    SES_SESSION_NAME
+)
 
 __author__ = "Bogdan Gladyshev"
 __copyright__ = "Copyright 2017, Bogdan Gladyshev"
@@ -32,7 +39,7 @@ class OAuthConfigurationException(Exception):
 
 
 async def oauth(request: Request) -> HTTPResponse:
-    provider = request['session'].get('oauth_provider', None)
+    provider = request[SES_SESSION_NAME].get(SES_OAUTH_PROVIDER_FIELD, None)
     provider_confs = request.app.config.get('OAUTH_PROVIDERS', {})
     if provider is None and 'default' in provider_confs:
         provider = 'default'
@@ -60,22 +67,25 @@ async def oauth(request: Request) -> HTTPResponse:
         request.args.get('code'),
         redirect_uri=use_redirect_uri
     )
-    request['session']['token'] = token
+    request[SES_SESSION_NAME][SES_ACCESS_TOKEN_FIELD] = token
     if provider:
         # remember provider
-        request['session']['oauth_provider'] = provider
-    elif 'oauth_provider' in request['session']:
+        request[SES_SESSION_NAME][SES_OAUTH_PROVIDER_FIELD] = provider
+    else:
         # forget remembered provider
-        del request['session']['oauth_provider']
-    return redirect(request['session'].get('after_auth_redirect',
-                                           use_after_auth_default_redirect))
+        request[SES_SESSION_NAME].pop(SES_OAUTH_PROVIDER_FIELD, None)
+
+    return redirect(
+        request[SES_SESSION_NAME].get(
+            SES_AFTER_AUTH_REDIR_FIELD,
+            use_after_auth_default_redirect))
 
 
 async def oauth_logout(request: Request) -> HTTPResponse:
-    del request['session']['token']
-    del request['session']['user_info']
+    request[SES_SESSION_NAME].pop(SES_ACCESS_TOKEN_FIELD, None)
+    request[SES_SESSION_NAME].pop(SES_USER_INFO_FIELD, None)
     logout_uri = request.app.config.OAUTH_LOGOUT_URI
-    return redirect(logout_uri)
+    return redirect(logout_uri + '?redirect_uri=/')
 
 
 async def oauth_login(request: Request) -> HTTPResponse:
@@ -103,13 +113,14 @@ async def oauth_login(request: Request) -> HTTPResponse:
 
     return redirect(oauth_endpoint_path)
 
+
 async def fetch_user_info(request, provider, oauth_endpoint_path, local_email_regex) -> UserInfo:
     try:
-        user_info = request['session']['user_info']
+        user_info = request[SES_SESSION_NAME][SES_USER_INFO_FIELD]
         user = UserInfo(**user_info)
     except KeyError:
-        factory_args = {'access_token': request['session']['token']}
-        oauth_provider = request['session'].get('oauth_provider', provider)
+        factory_args = {'access_token': request[SES_SESSION_NAME][SES_ACCESS_TOKEN_FIELD]}
+        oauth_provider = request[SES_SESSION_NAME].get(SES_OAUTH_PROVIDER_FIELD, provider)
         if oauth_provider:
             factory_args['provider'] = provider
         client = request.app.oauth_factory(**factory_args)
@@ -123,7 +134,7 @@ async def fetch_user_info(request, provider, oauth_endpoint_path, local_email_re
         if local_email_regex and user.email:
             if not local_email_regex.match(user.email):
                 return redirect(oauth_endpoint_path)
-        request['session']['user_info'] = _info
+        request[SES_SESSION_NAME][SES_USER_INFO_FIELD] = _info
     return user
 
 
@@ -134,7 +145,13 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
     """
 
     if async_handler is None:
-        return partial(login_required, provider=provider, add_user_info=add_user_info, email_regex=email_regex, redirect_login=redirect_login)
+        return partial(
+            login_required,
+            provider=provider,
+            add_user_info=add_user_info,
+            email_regex=email_regex,
+            redirect_login=redirect_login
+        )
 
     if email_regex is not None:
         email_regex = re.compile(email_regex)
@@ -166,13 +183,13 @@ def login_required(async_handler=None, provider=None, add_user_info=True, email_
             oauth_email_regex = request.app.config.OAUTH_EMAIL_REGEX
 
         # Do core oauth authentication once per session
-        if 'token' not in request['session']:
+        if SES_ACCESS_TOKEN_FIELD not in request[SES_SESSION_NAME]:
             if not redirect_login:
                 raise HTTPUnauthorized(reason=f'User is not authenticated.')
 
             if provider:
-                request['session']['oauth_provider'] = provider
-            request['session']['after_auth_redirect'] = request.path
+                request[SES_SESSION_NAME][SES_OAUTH_PROVIDER_FIELD] = provider
+            request[SES_SESSION_NAME][SES_AFTER_AUTH_REDIR_FIELD] = request.path
             return redirect(oauth_endpoint_path)
 
         # Shortcircuit out if we don't care about user info

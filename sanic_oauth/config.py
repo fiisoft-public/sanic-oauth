@@ -1,0 +1,7 @@
+SES_SESSION_NAME = 'session'
+SES_COOKIE_NAME = 'sessionid'
+SES_ACCESS_TOKEN_FIELD = 'access_token'
+SES_REFRESH_TOKEN_FIELD = 'refresh_token'
+SES_USER_INFO_FIELD = 'user_info'
+SES_OAUTH_PROVIDER_FIELD = 'oauth_provider'
+SES_AFTER_AUTH_REDIR_FIELD = 'after_auth_redirect'
